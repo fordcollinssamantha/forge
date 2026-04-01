@@ -95,7 +95,7 @@ The friendship/social app space is growing (collectively ~$16M in US consumer sp
 | Dimension | AI Therapy Apps | Social Connection Apps | Forge |
 |---|---|---|---|
 | Male-coded identity | No | No | Yes |
-| Passes Status Test (18-25M) | No | Partial | Yes |
+| Passes Status Test (18+M) | No | Partial | Yes |
 | Skill-building architecture | Partially (internal) | No | Yes |
 | Social practice layer | No | No | Yes |
 | Experience/event layer | No | Yes | Yes (Layer 3) |
