@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { ChevronRight } from "lucide-react";
 import CityAutocomplete from "@/components/CityAutocomplete";
@@ -279,7 +278,6 @@ export default function OnboardingPage() {
     city: string;
     isCustomCity: boolean;
   } | null>(null);
-  const { user } = useUser();
   const router = useRouter();
 
   function goToScreen(next: Screen) {
@@ -302,8 +300,10 @@ export default function OnboardingPage() {
   }
 
   async function handleMotivationSubmit(motivation: string) {
-    if (!user || !profileData) return;
+    if (!profileData) return;
     setSaving(true);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
     try {
       const res = await fetch("/api/users", {
         method: "POST",
@@ -315,7 +315,9 @@ export default function OnboardingPage() {
           is_custom_city: profileData.isCustomCity,
           motivation,
         }),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         console.error("API error detail:", body);
@@ -323,8 +325,9 @@ export default function OnboardingPage() {
       }
       goToScreen(3);
     } catch (err) {
+      clearTimeout(timeout);
       console.error("Failed to save profile:", err);
-      // Don't block onboarding if motivation save fails — still advance
+      // Don't block onboarding if save fails or times out — still advance
       goToScreen(3);
     } finally {
       setSaving(false);
