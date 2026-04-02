@@ -541,10 +541,11 @@ export default function CheckinPage() {
 
   async function handleVocabularySubmit(words: string[], extra: string) {
     if (emojiSelections.length === 0) return;
-    // First-visit requires motivation to have been selected
     if (!isReturning && !motivation) return;
 
     setSaving(true);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
     try {
       const body: Record<string, unknown> = {
         emoji: emojiSelections[0].emoji,
@@ -553,7 +554,6 @@ export default function CheckinPage() {
         verbal_description: extra || null,
       };
 
-      // Only include behavioral data on first visit
       if (!isReturning) {
         body.avoidance_response = motivation;
         body.follow_up_response = followUpResponse;
@@ -563,11 +563,12 @@ export default function CheckinPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
       if (!res.ok) {
-        const result = await res.json();
+        const result = await res.json().catch(() => ({}));
         console.error("Check-in API error:", result);
-        alert(`Save failed: ${result.detail || result.error}`);
         throw new Error(result.error || "Failed to save check-in");
       }
       const result = await res.json();
@@ -575,7 +576,12 @@ export default function CheckinPage() {
       await new Promise((r) => setTimeout(r, 300));
       router.push(result.tutorial_completed ? "/companion" : "/tutorial");
     } catch (err) {
+      clearTimeout(timeout);
       console.error("Failed to save check-in:", err);
+      // Don't block the user if save fails or times out — still advance
+      setExiting(true);
+      await new Promise((r) => setTimeout(r, 300));
+      router.push("/companion");
     } finally {
       setSaving(false);
     }
