@@ -317,13 +317,15 @@ export default function OnboardingPage() {
         }),
       });
       if (!res.ok) {
-        const body = await res.json();
+        const body = await res.json().catch(() => ({}));
         console.error("API error detail:", body);
         throw new Error(body.detail || body.error || "Failed to save profile");
       }
       goToScreen(3);
     } catch (err) {
       console.error("Failed to save profile:", err);
+      // Don't block onboarding if motivation save fails — still advance
+      goToScreen(3);
     } finally {
       setSaving(false);
     }
