@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { buildSystemPrompt } from "@/lib/companion-prompt";
+import { buildSystemPrompt, MissionContext } from "@/lib/companion-prompt";
 
 const anthropic = new Anthropic();
 
@@ -11,11 +11,19 @@ export async function POST(req: Request) {
       checkin,
       behavioralCheckin,
       userName,
+      city,
+      motivation,
+      missions,
+      systemOverride,
     }: {
       messages: { role: "user" | "companion"; content: string }[];
-      checkin?: { emoji?: string; emotion_words?: string[] };
+      checkin?: { emoji?: string; emojis?: string[]; emotion_words?: string[] };
       behavioralCheckin?: { avoidance_response?: string };
       userName?: string;
+      city?: string;
+      motivation?: string;
+      missions?: MissionContext;
+      systemOverride?: string;
     } = body;
 
     if (!messages || !Array.isArray(messages)) {
@@ -25,11 +33,15 @@ export async function POST(req: Request) {
       );
     }
 
-    const systemPrompt = buildSystemPrompt({
+    const systemPrompt = systemOverride || buildSystemPrompt({
       userName: userName || "friend",
       behavioralResponse: behavioralCheckin?.avoidance_response,
       emoji: checkin?.emoji,
+      emojis: checkin?.emojis,
       emotionWords: checkin?.emotion_words?.join(", "),
+      city: city || undefined,
+      motivation: motivation || undefined,
+      missions: missions || undefined,
     });
 
     // Convert our message format to Anthropic format

@@ -18,16 +18,25 @@ export async function GET() {
 
   const { data: user, error: userError } = await supabase
     .from("users")
-    .select("id, first_name")
+    .select("id, first_name, city, motivation")
     .eq("clerk_id", userId)
     .single();
 
   if (userError || !user) {
-    return NextResponse.json({ error: "User not found" }, { status: 404 });
+    // New user who hasn't completed onboarding yet — return empty defaults
+    return NextResponse.json({
+      user: null,
+      behavioral: null,
+      checkin: null,
+      conversation: null,
+      conversationCount: 0,
+      activePatternType: null,
+      missions: { active: undefined, recent: undefined },
+    });
   }
 
   // Get latest check-in data for the opening message
-  const [behavioralResult, checkinResult, conversationResult] = await Promise.all([
+  const [behavioralResult, checkinResult, conversationResult, activeMissionResult, recentMissionsResult] = await Promise.all([
     supabase
       .from("behavioral_checkins")
       .select("avoidance_response, follow_up_response")
@@ -37,7 +46,7 @@ export async function GET() {
       .single(),
     supabase
       .from("checkins")
-      .select("emoji, emotion_words")
+      .select("emoji, emojis, emotion_words")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -49,6 +58,21 @@ export async function GET() {
       .order("created_at", { ascending: false })
       .limit(1)
       .single(),
+    supabase
+      .from("missions")
+      .select("title, created_at")
+      .eq("user_id", user.id)
+      .eq("status", "active")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single(),
+    supabase
+      .from("missions")
+      .select("title, reflection, completed_at")
+      .eq("user_id", user.id)
+      .eq("status", "completed")
+      .order("completed_at", { ascending: false })
+      .limit(3),
   ]);
 
   // Count total conversations for the badge
@@ -67,12 +91,16 @@ export async function GET() {
     .single();
 
   return NextResponse.json({
-    user: { id: user.id, first_name: user.first_name },
+    user: { id: user.id, first_name: user.first_name, city: user.city, motivation: user.motivation },
     behavioral: behavioralResult.data,
     checkin: checkinResult.data,
     conversation: conversationResult.data,
     conversationCount: count || 0,
     activePatternType: activePattern?.pattern_type || null,
+    missions: {
+      active: activeMissionResult.data || undefined,
+      recent: recentMissionsResult.data || undefined,
+    },
   });
 }
 

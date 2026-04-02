@@ -21,7 +21,7 @@ export async function GET() {
   }
 
   // Fetch all data in parallel
-  const [pointsRes, checkinRes, conversationRes, skillRes, reflectionRes] =
+  const [pointsRes, checkinRes, conversationRes, skillRes, reflectionRes, activeMissionRes, missionsCountRes] =
     await Promise.all([
       supabase
         .from("score_events")
@@ -48,6 +48,18 @@ export async function GET() {
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(1),
+      supabase
+        .from("missions")
+        .select("id, title, description, source, status, created_at")
+        .eq("user_id", user.id)
+        .eq("status", "active")
+        .order("created_at", { ascending: false })
+        .limit(1),
+      supabase
+        .from("missions")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("status", "completed"),
     ]);
 
   // Total points
@@ -106,6 +118,9 @@ export async function GET() {
 
   const hasCheckin = (checkinRes.data?.length ?? 0) > 0;
 
+  const activeMission = activeMissionRes.data?.[0] ?? null;
+  const missionsCompleted = missionsCountRes.count ?? 0;
+
   return NextResponse.json({
     firstName: user.first_name,
     totalPoints,
@@ -114,5 +129,7 @@ export async function GET() {
     weeklyProgress,
     recentReflection,
     hasCheckin,
+    activeMission,
+    missionsCompleted,
   });
 }

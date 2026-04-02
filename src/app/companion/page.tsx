@@ -12,6 +12,7 @@ interface Message {
 
 interface CheckinData {
   emoji?: string;
+  emojis?: string[];
   emotion_words?: string[];
 }
 
@@ -42,11 +43,19 @@ const EMOJI_LABELS: Record<string, string> = {
   "😄": "Fired Up",
 };
 
+interface MissionContextData {
+  active?: { title: string; created_at: string };
+  recent?: { title: string; reflection: string | null; completed_at: string }[];
+}
+
 async function streamCompanionResponse(
   messages: Message[],
   checkin: CheckinData | undefined,
   behavioralCheckin: BehavioralCheckinData | undefined,
   userName: string,
+  city: string,
+  motivation: string,
+  missions: MissionContextData | undefined,
   onToken: (token: string) => void
 ): Promise<string> {
   const res = await fetch("/api/companion/chat", {
@@ -57,6 +66,9 @@ async function streamCompanionResponse(
       checkin,
       behavioralCheckin,
       userName,
+      city,
+      motivation,
+      missions,
     }),
   });
 
@@ -83,10 +95,21 @@ function buildFirstConversationOpener(
   firstName: string,
   avoidanceResponse: string | undefined,
   emoji: string | undefined,
+  emojis: string[] | undefined,
   emotionWords: string[] | undefined
 ): string {
   const name = firstName || "man";
-  const emojiLabel = emoji ? EMOJI_LABELS[emoji] || "" : "";
+
+  // Build emoji label string from multiple emojis
+  const emojiList = emojis && emojis.length > 0 ? emojis : emoji ? [emoji] : [];
+  const emojiLabels = emojiList
+    .map((e) => `${e} ${EMOJI_LABELS[e] || ""}`.trim())
+    .filter(Boolean);
+
+  const emojiStr =
+    emojiLabels.length > 1
+      ? emojiLabels.slice(0, -1).join(", ") + " and " + emojiLabels[emojiLabels.length - 1]
+      : emojiLabels[0] || "";
 
   let avoidanceRef = "";
   if (avoidanceResponse) {
@@ -102,12 +125,18 @@ function buildFirstConversationOpener(
       ? emotionWords.map((w) => `"${w}"`).join(", ")
       : "";
 
-  if (avoidanceRef && emojiLabel && wordsStr) {
-    return `Hey ${name}. You mentioned "${avoidanceRef}" — that takes guts to say out loud. And you said you're feeling ${emojiLabel} — specifically ${wordsStr}. Want to dig into that, or is there something else going on?`;
+  if (avoidanceRef && emojiStr && wordsStr) {
+    if (emojiLabels.length > 1) {
+      return `Hey ${name}. You mentioned "${avoidanceRef}" — that takes guts to say out loud. And you said you're feeling ${emojiStr} — specifically ${wordsStr}. That's an interesting combo. What's going on?`;
+    }
+    return `Hey ${name}. You mentioned "${avoidanceRef}" — that takes guts to say out loud. And you said you're feeling ${emojiStr} — specifically ${wordsStr}. Want to dig into that, or is there something else going on?`;
   }
 
-  if (emojiLabel && wordsStr) {
-    return `Hey ${name}. You said you're feeling ${emojiLabel} — specifically ${wordsStr}. What's behind that right now?`;
+  if (emojiStr && wordsStr) {
+    if (emojiLabels.length > 1) {
+      return `Hey ${name}. You said you're feeling ${emojiStr} — specifically ${wordsStr}. That's an interesting combo. What's going on?`;
+    }
+    return `Hey ${name}. You said you're feeling ${emojiStr} — specifically ${wordsStr}. What's behind that right now?`;
   }
 
   return `Hey ${name}. Good to see you here. What's on your mind today?`;
@@ -116,21 +145,69 @@ function buildFirstConversationOpener(
 function buildReturningOpener(
   firstName: string,
   lastSummary: string | null,
-  activePatternType: string | null
+  activePatternType: string | null,
+  emoji?: string,
+  emojis?: string[],
+  emotionWords?: string[],
+  activeMission?: { title: string } | null,
+  recentMission?: { title: string; reflection: string | null } | null,
 ): string {
   const name = firstName || "man";
+
+  // Build emoji context from today's check-in
+  const emojiList = emojis && emojis.length > 0 ? emojis : emoji ? [emoji] : [];
+  const emojiLabels = emojiList
+    .map((e) => `${e} ${EMOJI_LABELS[e] || ""}`.trim())
+    .filter(Boolean);
+  const emojiStr =
+    emojiLabels.length > 1
+      ? emojiLabels.slice(0, -1).join(", ") + " and " + emojiLabels[emojiLabels.length - 1]
+      : emojiLabels[0] || "";
+  const wordsStr =
+    emotionWords && emotionWords.length > 0
+      ? emotionWords.map((w) => `"${w}"`).join(", ")
+      : "";
 
   // Build a pool of available openers, then pick one at random
   const openers: string[] = [];
 
-  // Always include casual openers
-  openers.push(
-    `Hey ${name}. What's going on today?`,
-    `What's on your mind, ${name}?`,
-    `Good to see you back, ${name}. What are we working on today?`,
-  );
+  // Check-in based openers (preferred on return visits with fresh check-in data)
+  if (emojiStr && wordsStr) {
+    if (emojiLabels.length > 1) {
+      openers.push(
+        `Hey ${name}. ${emojiStr} — specifically ${wordsStr}. That's an interesting combo today. What's going on?`,
+        `${emojiStr} today, ${name}. And you said ${wordsStr}. Walk me through that.`,
+      );
+    } else {
+      openers.push(
+        `Hey ${name}. Feeling ${emojiStr} today — ${wordsStr}. What's behind that?`,
+        `${emojiStr}, huh? And ${wordsStr}. What's going on, ${name}?`,
+      );
+    }
+  }
 
-  // Add summary-based opener if we have one
+  // Active mission opener
+  if (activeMission) {
+    openers.push(
+      `Hey ${name}. How's the mission going — "${activeMission.title}"?`,
+      `Welcome back, ${name}. You've got "${activeMission.title}" on deck. How are you feeling about it?`,
+    );
+  }
+
+  // Recently completed mission opener
+  if (recentMission) {
+    if (recentMission.reflection) {
+      openers.push(
+        `Hey ${name}. Last mission you said "${recentMission.reflection}" about "${recentMission.title}." Anything else on your mind from that?`,
+      );
+    } else {
+      openers.push(
+        `Hey ${name}. You knocked out "${recentMission.title}" — nice. What are we working on today?`,
+      );
+    }
+  }
+
+  // Summary-based opener if we have one
   if (lastSummary) {
     openers.push(
       `Hey ${name}. Last time we talked about ${lastSummary} — how's that going?`,
@@ -138,12 +215,21 @@ function buildReturningOpener(
     );
   }
 
-  // Add pattern-based opener if there's an active pattern
+  // Pattern-based opener if there's an active pattern
   if (activePatternType) {
     const patternLabel = activePatternType.replace(/_/g, " ");
     openers.push(
       `Hey ${name}. Been noticing anything about that ${patternLabel} pattern we flagged?`,
       `Welcome back, ${name}. Have you caught yourself doing any of that ${patternLabel} stuff since we last talked?`,
+    );
+  }
+
+  // Fallback casual openers
+  if (openers.length === 0) {
+    openers.push(
+      `Hey ${name}. What's going on today?`,
+      `What's on your mind, ${name}?`,
+      `Good to see you back, ${name}. What are we working on today?`,
     );
   }
 
@@ -257,6 +343,9 @@ export default function CompanionPage() {
   const [patternCard, setPatternCard] = useState<PatternCard | null>(null);
   const [lastSummary, setLastSummary] = useState<string | null>(null);
   const [activePatternType, setActivePatternType] = useState<string | null>(null);
+  const [userCity, setUserCity] = useState("");
+  const [userMotivation, setUserMotivation] = useState("");
+  const [missionContext, setMissionContext] = useState<MissionContextData | undefined>();
   const lastUserInputRef = useRef("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -286,9 +375,15 @@ export default function CompanionPage() {
         const convCount = data.conversationCount || 0;
         setConversationCount(convCount);
         setUserFirstName(data.user?.first_name || "");
+        setUserCity(data.user?.city || "");
+        setUserMotivation(data.user?.motivation || "");
         setActivePatternType(data.activePatternType || null);
         if (data.checkin) {
-          setCheckinData({ emoji: data.checkin.emoji, emotion_words: data.checkin.emotion_words });
+          setCheckinData({
+            emoji: data.checkin.emoji,
+            emojis: data.checkin.emojis,
+            emotion_words: data.checkin.emotion_words,
+          });
         }
         if (data.behavioral) {
           setBehavioralData({ avoidance_response: data.behavioral.avoidance_response });
@@ -296,6 +391,10 @@ export default function CompanionPage() {
         // Track last conversation summary for varied openers
         if (data.conversation?.summary) {
           setLastSummary(data.conversation.summary);
+        }
+        // Load mission context for the coach
+        if (data.missions) {
+          setMissionContext(data.missions);
         }
 
         // If there's an existing conversation with messages, load it
@@ -309,12 +408,18 @@ export default function CompanionPage() {
                 data.user?.first_name,
                 data.behavioral?.avoidance_response,
                 data.checkin?.emoji,
+                data.checkin?.emojis,
                 data.checkin?.emotion_words
               )
             : buildReturningOpener(
                 data.user?.first_name,
                 data.conversation?.summary || null,
-                data.activePatternType || null
+                data.activePatternType || null,
+                data.checkin?.emoji,
+                data.checkin?.emojis,
+                data.checkin?.emotion_words,
+                data.missions?.active || null,
+                data.missions?.recent?.[0] || null,
               );
 
           const firstMessage: Message = {
@@ -412,7 +517,12 @@ export default function CompanionPage() {
     const opening = buildReturningOpener(
       userFirstName,
       lastSummary,
-      currentPatternType
+      currentPatternType,
+      checkinData?.emoji,
+      checkinData?.emojis,
+      checkinData?.emotion_words,
+      missionContext?.active || null,
+      missionContext?.recent?.[0] || null,
     );
 
     const firstMessage: Message = {
@@ -504,21 +614,49 @@ export default function CompanionPage() {
         checkinData,
         behavioralData,
         userFirstName || "friend",
+        userCity,
+        userMotivation,
+        missionContext,
         (token) => {
           streamingMessage.content += token;
           setMessages([...withUser, { ...streamingMessage }]);
         }
       );
 
+      // Strip [MISSION: ...] tag from display text and create mission
+      const missionMatch = fullResponse.match(/\[MISSION:\s*(.+?)\]/);
+      const displayResponse = fullResponse.replace(/\s*\[MISSION:\s*.+?\]/, "").trim();
+
       const companionMessage: Message = {
         role: "companion",
-        content: fullResponse,
+        content: displayResponse,
         timestamp: new Date().toISOString(),
       };
 
       const withResponse = [...withUser, companionMessage];
       setMessages(withResponse);
       setIsTyping(false);
+
+      // Auto-create mission suggested by coach
+      if (missionMatch) {
+        const missionTitle = missionMatch[1].trim();
+        try {
+          const missionRes = await fetch("/api/missions/create", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title: missionTitle, source: "coach" }),
+          });
+          if (missionRes.ok) {
+            const newMission = await missionRes.json();
+            setMissionContext((prev) => ({
+              ...prev,
+              active: { title: newMission.title, created_at: newMission.created_at },
+            }));
+          }
+        } catch {
+          // non-critical
+        }
+      }
 
       // Save with companion response
       await saveMessages(withResponse);

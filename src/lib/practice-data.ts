@@ -24,7 +24,7 @@ export const TEMPERATURE_OPTIONS: {
     value: "medium",
     label: "Cold Read",
     description:
-      "Distracted and low energy. Not rude — just not interested. You need charm, not just competence, to shift their energy.",
+      "Distracted and low energy. Not rude — just in their own world. A genuine question gets you in the door. Listening keeps you there.",
   },
   {
     value: "cold",

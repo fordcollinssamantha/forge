@@ -4,13 +4,25 @@ import { useState } from "react";
 import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { ChevronRight } from "lucide-react";
+import CityAutocomplete from "@/components/CityAutocomplete";
 
-type Screen = 0 | 1 | 2;
+type Screen = 0 | 1 | 2 | 3;
 
-function ProgressDots({ current }: { current: Screen }) {
+const MOTIVATION_OPTIONS = [
+  { id: "new_city", label: "I moved somewhere new and don\u2019t know anyone" },
+  { id: "talking", label: "I want to get better at talking to people" },
+  { id: "social_life", label: "My social life isn\u2019t where I want it to be" },
+  { id: "find_things", label: "I want to find things to do and people to do them with" },
+  { id: "curious", label: "Just curious what this is" },
+  { id: "other", label: "Something else" },
+] as const;
+
+type MotivationId = (typeof MOTIVATION_OPTIONS)[number]["id"];
+
+function ProgressDots({ current, total = 4 }: { current: number; total?: number }) {
   return (
     <div className="flex gap-2 justify-center pt-8 pb-6">
-      {[0, 1, 2].map((i) => (
+      {Array.from({ length: total }, (_, i) => (
         <div
           key={i}
           className={`h-2 rounded-full transition-all duration-300 ${
@@ -70,11 +82,12 @@ function WelcomeScreen({ onNext }: { onNext: () => void }) {
 function ProfileScreen({
   onNext,
 }: {
-  onNext: (data: { name: string; age: number; city: string }) => void;
+  onNext: (data: { name: string; age: number; city: string; isCustomCity: boolean }) => void;
 }) {
   const [name, setName] = useState("");
   const [age, setAge] = useState("");
   const [city, setCity] = useState("");
+  const [isCustomCity, setIsCustomCity] = useState(false);
 
   const isValid = name.trim() && age && parseInt(age) >= 18 && city.trim();
 
@@ -121,12 +134,12 @@ function ProfileScreen({
             <label className="text-sm font-medium text-navy/70 mb-1.5 block">
               City
             </label>
-            <input
-              type="text"
+            <CityAutocomplete
               value={city}
-              onChange={(e) => setCity(e.target.value)}
-              placeholder="Where are you based?"
-              className="w-full px-4 py-3.5 rounded-xl bg-white border border-navy/10 text-navy placeholder:text-navy/30 focus:outline-none focus:border-coral focus:ring-1 focus:ring-coral transition-colors"
+              onChange={(c, custom) => {
+                setCity(c);
+                setIsCustomCity(custom);
+              }}
             />
           </div>
         </div>
@@ -137,8 +150,82 @@ function ProfileScreen({
           disabled={!isValid}
           onClick={() =>
             isValid &&
-            onNext({ name: name.trim(), age: parseInt(age), city: city.trim() })
+            onNext({ name: name.trim(), age: parseInt(age), city: city.trim(), isCustomCity })
           }
+          className="w-full bg-coral text-white font-semibold py-4 rounded-2xl text-lg transition-all flex items-center justify-center gap-2 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-coral-hover active:scale-[0.98]"
+        >
+          Continue
+          <ChevronRight className="w-5 h-5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function MotivationScreen({
+  onNext,
+}: {
+  onNext: (motivation: string) => void;
+}) {
+  const [selected, setSelected] = useState<MotivationId | null>(null);
+  const [customText, setCustomText] = useState("");
+
+  const isValid = selected && (selected !== "other" || customText.trim().length > 0);
+  const motivationValue = selected === "other"
+    ? customText.trim()
+    : selected || "";
+
+  return (
+    <div className="flex flex-col min-h-screen px-6 bg-cream">
+      <ProgressDots current={2} />
+      <div className="flex-1 flex flex-col pt-6">
+        <h2 className="text-2xl font-bold text-navy leading-snug">
+          What brought you to Forge?
+        </h2>
+        <p className="text-navy/50 mt-2 text-sm">
+          Pick the one that fits best.
+        </p>
+
+        <div className="mt-6 space-y-2.5">
+          {MOTIVATION_OPTIONS.map(({ id, label }) => (
+            <button
+              key={id}
+              onClick={() => setSelected(id)}
+              className={`w-full text-left px-4 py-3.5 rounded-xl border transition-all min-h-[52px] active:scale-[0.98] ${
+                selected === id
+                  ? "border-coral bg-coral/5"
+                  : "border-navy/10 bg-white hover:border-navy/20"
+              }`}
+            >
+              <span
+                className={`text-sm font-medium ${
+                  selected === id ? "text-navy" : "text-navy/70"
+                }`}
+              >
+                {label}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {selected === "other" && (
+          <div className="mt-4">
+            <input
+              type="text"
+              value={customText}
+              onChange={(e) => setCustomText(e.target.value)}
+              placeholder="Tell us in your own words"
+              autoFocus
+              className="w-full px-4 py-3.5 rounded-xl bg-white border border-navy/10 text-navy placeholder:text-navy/30 focus:outline-none focus:border-coral focus:ring-1 focus:ring-coral transition-colors"
+            />
+          </div>
+        )}
+      </div>
+
+      <div className="w-full pb-10 pt-6">
+        <button
+          disabled={!isValid}
+          onClick={() => isValid && onNext(motivationValue)}
           className="w-full bg-coral text-white font-semibold py-4 rounded-2xl text-lg transition-all flex items-center justify-center gap-2 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-coral-hover active:scale-[0.98]"
         >
           Continue
@@ -152,7 +239,7 @@ function ProfileScreen({
 function ToneScreen({ onFinish }: { onFinish: () => void }) {
   return (
     <div className="flex flex-col min-h-screen px-6 bg-cream">
-      <ProgressDots current={2} />
+      <ProgressDots current={3} />
       <div className="flex-1 flex flex-col justify-center -mt-12">
         <p className="text-coral font-semibold text-lg">One more thing...</p>
         <div className="mt-6 space-y-5">
@@ -186,6 +273,12 @@ export default function OnboardingPage() {
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [saving, setSaving] = useState(false);
   const [exiting, setExiting] = useState(false);
+  const [profileData, setProfileData] = useState<{
+    name: string;
+    age: number;
+    city: string;
+    isCustomCity: boolean;
+  } | null>(null);
   const { user } = useUser();
   const router = useRouter();
 
@@ -198,28 +291,37 @@ export default function OnboardingPage() {
     }, 200);
   }
 
-  async function handleProfileSubmit(data: {
+  function handleProfileNext(data: {
     name: string;
     age: number;
     city: string;
+    isCustomCity: boolean;
   }) {
-    if (!user) return;
+    setProfileData(data);
+    goToScreen(2);
+  }
+
+  async function handleMotivationSubmit(motivation: string) {
+    if (!user || !profileData) return;
     setSaving(true);
     try {
       const res = await fetch("/api/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          first_name: data.name,
-          age: data.age,
-          city: data.city,
+          first_name: profileData.name,
+          age: profileData.age,
+          city: profileData.city,
+          is_custom_city: profileData.isCustomCity,
+          motivation,
         }),
       });
       if (!res.ok) {
         const body = await res.json();
-        throw new Error(body.error || "Failed to save profile");
+        console.error("API error detail:", body);
+        throw new Error(body.detail || body.error || "Failed to save profile");
       }
-      goToScreen(2);
+      goToScreen(3);
     } catch (err) {
       console.error("Failed to save profile:", err);
     } finally {
@@ -247,8 +349,11 @@ export default function OnboardingPage() {
       >
         {screen === 0 && <WelcomeScreen onNext={() => goToScreen(1)} />}
         {screen === 1 && (
+          <ProfileScreen onNext={handleProfileNext} />
+        )}
+        {screen === 2 && (
           <div className="relative">
-            <ProfileScreen onNext={handleProfileSubmit} />
+            <MotivationScreen onNext={handleMotivationSubmit} />
             {saving && (
               <div className="absolute inset-0 bg-cream/60 flex items-center justify-center">
                 <div className="w-8 h-8 border-3 border-coral border-t-transparent rounded-full animate-spin" />
@@ -256,7 +361,7 @@ export default function OnboardingPage() {
             )}
           </div>
         )}
-        {screen === 2 && <ToneScreen onFinish={handleFinish} />}
+        {screen === 3 && <ToneScreen onFinish={handleFinish} />}
       </div>
     </div>
   );

@@ -4,8 +4,6 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronRight, Zap, Compass, Users, MapPin, Search } from "lucide-react";
 
-type Step = 0 | 1 | 2 | 3;
-
 const MOTIVATION_OPTIONS = [
   {
     id: "confidence",
@@ -149,7 +147,7 @@ const VOCABULARY_MAP: Record<string, string[]> = {
   ],
 };
 
-function ProgressDots({ current, total }: { current: Step; total: number }) {
+function ProgressDots({ current, total }: { current: number; total: number }) {
   return (
     <div className="flex gap-2 justify-center pt-8 pb-6">
       {Array.from({ length: total }, (_, i) => (
@@ -168,7 +166,7 @@ function ProgressDots({ current, total }: { current: Step; total: number }) {
   );
 }
 
-// ─── STEP 0: What brought you here? ──────────────────────────
+// ─── First-visit only: What brought you here? ──────────────────
 function MotivationStep({
   onNext,
 }: {
@@ -232,7 +230,7 @@ function MotivationStep({
   );
 }
 
-// ─── STEP 1: Adaptive follow-up ──────────────────────────────
+// ─── First-visit only: Adaptive follow-up ──────────────────────
 function FollowUpStep({
   motivation,
   onNext,
@@ -277,60 +275,87 @@ function FollowUpStep({
   );
 }
 
-// ─── STEP 2: Emoji selection ─────────────────────────────────
+// ─── Emoji selection (1-3 emojis) ──────────────────────────────
 function EmojiSelection({
   onNext,
+  stepIndex,
+  totalSteps,
 }: {
-  onNext: (emoji: string, label: string) => void;
+  onNext: (selections: { emoji: string; label: string }[]) => void;
+  stepIndex: number;
+  totalSteps: number;
 }) {
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
+  const maxReached = selected.length >= 3;
+
+  function toggleEmoji(label: string) {
+    setSelected((prev) => {
+      if (prev.includes(label)) return prev.filter((l) => l !== label);
+      if (prev.length >= 3) return prev;
+      return [...prev, label];
+    });
+  }
 
   return (
     <div className="flex flex-col min-h-screen px-6 bg-cream">
-      <ProgressDots current={2} total={4} />
+      <ProgressDots current={stepIndex} total={totalSteps} />
       <div className="flex-1 flex flex-col pt-6">
         <h2 className="text-2xl font-bold text-navy">
-          How does your social life feel right now?
+          How are you feeling today?
         </h2>
         <p className="text-navy/50 mt-2">
-          Pick the one that fits. No wrong answers.
+          Pick up to 3 that fit. No wrong answers.
         </p>
 
         <div className="grid grid-cols-3 gap-3 mt-8">
-          {EMOJI_OPTIONS.map(({ emoji, label }) => (
-            <button
-              key={label}
-              onClick={() => setSelected(label)}
-              className={`flex flex-col items-center gap-1.5 py-4 px-2 min-h-[76px] rounded-2xl border-2 transition-all duration-200 ${
-                selected === label
-                  ? "border-coral bg-coral/5 scale-105 shadow-sm"
-                  : "border-navy/10 bg-white hover:border-navy/20 active:scale-95"
-              }`}
-            >
-              <span
-                className={`text-3xl ${selected === label ? "animate-emoji-pop" : ""}`}
-              >
-                {emoji}
-              </span>
-              <span
-                className={`text-xs font-medium ${
-                  selected === label ? "text-coral" : "text-navy/60"
+          {EMOJI_OPTIONS.map(({ emoji, label }) => {
+            const isSelected = selected.includes(label);
+            const isBlocked = maxReached && !isSelected;
+            return (
+              <button
+                key={label}
+                onClick={() => toggleEmoji(label)}
+                className={`flex flex-col items-center gap-1.5 py-4 px-2 min-h-[76px] rounded-2xl border-2 transition-all duration-200 ${
+                  isSelected
+                    ? "border-coral bg-coral/5 scale-105 shadow-sm"
+                    : isBlocked
+                      ? "border-navy/5 bg-white/50 opacity-40 cursor-not-allowed"
+                      : "border-navy/10 bg-white hover:border-navy/20 active:scale-95"
                 }`}
               >
-                {label}
-              </span>
-            </button>
-          ))}
+                <span
+                  className={`text-3xl ${isSelected ? "animate-emoji-pop" : ""}`}
+                >
+                  {emoji}
+                </span>
+                <span
+                  className={`text-xs font-medium ${
+                    isSelected ? "text-coral" : "text-navy/60"
+                  }`}
+                >
+                  {label}
+                </span>
+              </button>
+            );
+          })}
         </div>
+
+        {maxReached && (
+          <p className="text-center text-navy/40 text-xs mt-3 animate-fade-in">
+            3 max — tap one to deselect
+          </p>
+        )}
       </div>
 
       <div className="w-full pb-10 pt-6">
         <button
-          disabled={!selected}
+          disabled={selected.length === 0}
           onClick={() => {
-            if (!selected) return;
-            const option = EMOJI_OPTIONS.find((o) => o.label === selected)!;
-            onNext(option.emoji, option.label);
+            const selections = selected.map((label) => {
+              const opt = EMOJI_OPTIONS.find((o) => o.label === label)!;
+              return { emoji: opt.emoji, label: opt.label };
+            });
+            onNext(selections);
           }}
           className="w-full bg-coral text-white font-semibold py-4 rounded-2xl text-lg transition-all flex items-center justify-center gap-2 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-coral-hover active:scale-[0.98]"
         >
@@ -342,22 +367,22 @@ function EmojiSelection({
   );
 }
 
-// ─── STEP 3: Vocabulary builder ──────────────────────────────
+// ─── Vocabulary builder (multi-emoji) ──────────────────────────
 function VocabularyBuilder({
-  emoji,
-  label,
+  selections,
   onSubmit,
   saving,
+  stepIndex,
+  totalSteps,
 }: {
-  emoji: string;
-  label: string;
+  selections: { emoji: string; label: string }[];
   onSubmit: (words: string[], extra: string) => void;
   saving: boolean;
+  stepIndex: number;
+  totalSteps: number;
 }) {
   const [selectedWords, setSelectedWords] = useState<string[]>([]);
   const [extra, setExtra] = useState("");
-
-  const words = VOCABULARY_MAP[label] || [];
 
   function toggleWord(word: string) {
     setSelectedWords((prev) => {
@@ -369,10 +394,12 @@ function VocabularyBuilder({
 
   return (
     <div className="flex flex-col min-h-screen px-6 bg-cream">
-      <ProgressDots current={3} total={4} />
+      <ProgressDots current={stepIndex} total={totalSteps} />
       <div className="flex-1 flex flex-col pt-6">
-        <div className="text-center mb-6">
-          <span className="text-6xl">{emoji}</span>
+        <div className="flex justify-center gap-3 mb-6">
+          {selections.map(({ emoji }) => (
+            <span key={emoji} className="text-5xl">{emoji}</span>
+          ))}
         </div>
 
         <h2 className="text-2xl font-bold text-navy text-center">
@@ -382,20 +409,36 @@ function VocabularyBuilder({
           Pick up to 3 that resonate.
         </p>
 
-        <div className="flex flex-wrap gap-2.5 mt-8 justify-center">
-          {words.map((word) => (
-            <button
-              key={word}
-              onClick={() => toggleWord(word)}
-              className={`px-4 py-2.5 rounded-full text-sm font-medium transition-all duration-200 ${
-                selectedWords.includes(word)
-                  ? "bg-coral text-white shadow-sm scale-105"
-                  : "bg-white text-navy/70 border border-navy/10 hover:border-navy/20 active:scale-95"
-              }`}
-            >
-              {word}
-            </button>
-          ))}
+        <div className="mt-8 space-y-5">
+          {selections.map(({ emoji, label }) => {
+            const words = VOCABULARY_MAP[label] || [];
+            return (
+              <div key={label}>
+                <div className="flex items-center gap-2 mb-2.5">
+                  <span className="text-lg">{emoji}</span>
+                  <span className="text-xs font-medium text-navy/40 uppercase tracking-wide">{label}</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {words.map((word) => (
+                    <button
+                      key={word}
+                      onClick={() => toggleWord(word)}
+                      disabled={selectedWords.length >= 3 && !selectedWords.includes(word)}
+                      className={`px-4 py-2.5 rounded-full text-sm font-medium transition-all duration-200 ${
+                        selectedWords.includes(word)
+                          ? "bg-coral text-white shadow-sm scale-105"
+                          : selectedWords.length >= 3
+                            ? "bg-white/50 text-navy/30 border border-navy/5 cursor-not-allowed"
+                            : "bg-white text-navy/70 border border-navy/10 hover:border-navy/20 active:scale-95"
+                      }`}
+                    >
+                      {word}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
 
         <div className="mt-8">
@@ -431,22 +474,46 @@ function VocabularyBuilder({
 
 // ─── Main check-in flow ──────────────────────────────────────
 export default function CheckinPage() {
-  const [step, setStep] = useState<Step>(0);
-  const [direction, setDirection] = useState<"forward" | "back">("forward");
-  const [isTransitioning, setIsTransitioning] = useState(false);
   const [saving, setSaving] = useState(false);
   const [exiting, setExiting] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [isReturning, setIsReturning] = useState(false);
   const router = useRouter();
+
+  // First-visit steps: 0=motivation, 1=follow-up, 2=emoji, 3=vocab (4 steps)
+  // Return-visit steps: 0=emoji, 1=vocab (2 steps)
+  const [step, setStep] = useState(0);
+  const [direction, setDirection] = useState<"forward" | "back">("forward");
+  const [isTransitioning, setIsTransitioning] = useState(false);
 
   // Collected data
   const [motivation, setMotivation] = useState<MotivationId | null>(null);
   const [followUpResponse, setFollowUpResponse] = useState("");
-  const [emojiData, setEmojiData] = useState<{
-    emoji: string;
-    label: string;
-  } | null>(null);
+  const [emojiSelections, setEmojiSelections] = useState<
+    { emoji: string; label: string }[]
+  >([]);
 
-  function goToStep(next: Step) {
+  // Check if this is a return visit
+  useEffect(() => {
+    async function checkReturning() {
+      try {
+        const res = await fetch("/api/checkins");
+        if (res.ok) {
+          const data = await res.json();
+          setIsReturning(data.isReturning);
+        }
+      } catch {
+        // Default to first-visit flow
+      } finally {
+        setLoading(false);
+      }
+    }
+    checkReturning();
+  }, []);
+
+  const totalSteps = isReturning ? 2 : 4;
+
+  function goToStep(next: number) {
     setDirection(next > step ? "forward" : "back");
     setIsTransitioning(true);
     setTimeout(() => {
@@ -455,6 +522,7 @@ export default function CheckinPage() {
     }, 200);
   }
 
+  // First-visit handlers
   function handleMotivationSelect(id: MotivationId) {
     setMotivation(id);
     goToStep(1);
@@ -465,36 +533,47 @@ export default function CheckinPage() {
     goToStep(2);
   }
 
-  function handleEmojiSelect(emoji: string, label: string) {
-    setEmojiData({ emoji, label });
-    goToStep(3);
+  // Shared handlers
+  function handleEmojiSelect(selections: { emoji: string; label: string }[]) {
+    setEmojiSelections(selections);
+    goToStep(isReturning ? 1 : 3);
   }
 
   async function handleVocabularySubmit(words: string[], extra: string) {
-    if (!motivation || !emojiData) return;
+    if (emojiSelections.length === 0) return;
+    // First-visit requires motivation to have been selected
+    if (!isReturning && !motivation) return;
+
     setSaving(true);
     try {
+      const body: Record<string, unknown> = {
+        emoji: emojiSelections[0].emoji,
+        emojis: emojiSelections.map((s) => s.emoji),
+        emotion_words: words,
+        verbal_description: extra || null,
+      };
+
+      // Only include behavioral data on first visit
+      if (!isReturning) {
+        body.avoidance_response = motivation;
+        body.follow_up_response = followUpResponse;
+      }
+
       const res = await fetch("/api/checkins", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          motivation,
-          avoidance_response: followUpResponse,
-          follow_up_response: motivation,
-          emoji: emojiData.emoji,
-          emotion_words: words,
-          verbal_description: extra || null,
-        }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
-        const body = await res.json();
-        console.error("Check-in API error:", body);
-        alert(`Save failed: ${body.detail || body.error}`);
-        throw new Error(body.error || "Failed to save check-in");
+        const result = await res.json();
+        console.error("Check-in API error:", result);
+        alert(`Save failed: ${result.detail || result.error}`);
+        throw new Error(result.error || "Failed to save check-in");
       }
+      const result = await res.json();
       setExiting(true);
       await new Promise((r) => setTimeout(r, 300));
-      router.push("/companion");
+      router.push(result.tutorial_completed ? "/companion" : "/tutorial");
     } catch (err) {
       console.error("Failed to save check-in:", err);
     } finally {
@@ -508,6 +587,14 @@ export default function CheckinPage() {
       : "opacity-0 -translate-x-8"
     : "opacity-100 translate-x-0";
 
+  if (loading) {
+    return (
+      <div className="flex flex-col min-h-screen bg-cream items-center justify-center">
+        <div className="w-6 h-6 border-2 border-coral border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
   return (
     <div
       className={`overflow-hidden transition-opacity duration-300 ${exiting ? "opacity-0" : "opacity-100"}`}
@@ -515,20 +602,50 @@ export default function CheckinPage() {
       <div
         className={`transition-all duration-200 ease-out ${translateClass}`}
       >
-        {step === 0 && (
-          <MotivationStep onNext={handleMotivationSelect} />
-        )}
-        {step === 1 && motivation && (
-          <FollowUpStep motivation={motivation} onNext={handleFollowUp} />
-        )}
-        {step === 2 && <EmojiSelection onNext={handleEmojiSelect} />}
-        {step === 3 && emojiData && (
-          <VocabularyBuilder
-            emoji={emojiData.emoji}
-            label={emojiData.label}
-            onSubmit={handleVocabularySubmit}
-            saving={saving}
-          />
+        {isReturning ? (
+          <>
+            {step === 0 && (
+              <EmojiSelection
+                onNext={handleEmojiSelect}
+                stepIndex={0}
+                totalSteps={totalSteps}
+              />
+            )}
+            {step === 1 && emojiSelections.length > 0 && (
+              <VocabularyBuilder
+                selections={emojiSelections}
+                onSubmit={handleVocabularySubmit}
+                saving={saving}
+                stepIndex={1}
+                totalSteps={totalSteps}
+              />
+            )}
+          </>
+        ) : (
+          <>
+            {step === 0 && (
+              <MotivationStep onNext={handleMotivationSelect} />
+            )}
+            {step === 1 && motivation && (
+              <FollowUpStep motivation={motivation} onNext={handleFollowUp} />
+            )}
+            {step === 2 && (
+              <EmojiSelection
+                onNext={handleEmojiSelect}
+                stepIndex={2}
+                totalSteps={totalSteps}
+              />
+            )}
+            {step === 3 && emojiSelections.length > 0 && (
+              <VocabularyBuilder
+                selections={emojiSelections}
+                onSubmit={handleVocabularySubmit}
+                saving={saving}
+                stepIndex={3}
+                totalSteps={totalSteps}
+              />
+            )}
+          </>
         )}
       </div>
     </div>

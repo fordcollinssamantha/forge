@@ -9,11 +9,22 @@ import {
   Calendar,
   Flame as FlameIcon,
   TrendingUp,
+  Target,
+  Check,
 } from "lucide-react";
 import { ProgressMeter } from "@/components/progress-meter";
 import { ConfidenceChart } from "@/components/confidence-chart";
 import { SkeletonDashboard } from "@/components/skeleton";
 import { SEED_EVENTS } from "@/lib/seed-events";
+
+interface ActiveMission {
+  id: string;
+  title: string;
+  description: string | null;
+  source: string;
+  status: string;
+  created_at: string;
+}
 
 interface DashboardData {
   firstName: string;
@@ -28,6 +39,8 @@ interface DashboardData {
     created_at: string;
   } | null;
   hasCheckin: boolean;
+  activeMission: ActiveMission | null;
+  missionsCompleted: number;
 }
 
 function getGreeting(): string {
@@ -50,6 +63,236 @@ function getNextEvent() {
     (eventDate.getTime() - now.getTime()) / 86400000
   );
   return { ...event, daysAway };
+}
+
+type MissionCardState = "active" | "reflecting" | "coaching" | "none";
+
+function MissionCard({
+  mission,
+  onComplete,
+  onPickMission,
+}: {
+  mission: ActiveMission | null;
+  onComplete: (points: number) => void;
+  onPickMission: () => void;
+}) {
+  const [state, setState] = useState<MissionCardState>(
+    mission ? "active" : "none"
+  );
+  const [reflection, setReflection] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [celebrationPoints, setCelebrationPoints] = useState(0);
+  const [coachResponse, setCoachResponse] = useState("");
+
+  // Sync state when mission prop changes
+  useEffect(() => {
+    setState(mission ? "active" : "none");
+  }, [mission?.id]);
+
+  async function handleDone() {
+    setState("reflecting");
+  }
+
+  async function handleSkip() {
+    if (!mission) return;
+    setSubmitting(true);
+    try {
+      await fetch(`/api/missions/${mission.id}/skip`, { method: "PATCH" });
+      setState("none");
+      onComplete(0);
+    } catch {
+      // ignore
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function submitReflection(skipReflection: boolean) {
+    if (!mission) return;
+    setSubmitting(true);
+    const reflectionText = skipReflection ? "" : reflection;
+    const body = skipReflection ? {} : { reflection: reflectionText };
+    const pts = skipReflection ? 3 : 5;
+    try {
+      const res = await fetch(`/api/missions/${mission.id}/complete`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        setCelebrationPoints(pts);
+
+        // If they wrote a reflection, get a coach response
+        if (!skipReflection && reflectionText.trim()) {
+          setState("coaching");
+          setCoachResponse("");
+          try {
+            const chatRes = await fetch("/api/companion/chat", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                messages: [{ role: "user", content: reflectionText }],
+                systemOverride: `The user just completed a Daily Mission called "${mission.title}". They said: "${reflectionText}". Give a 1-2 sentence response that treats this as a win regardless of how it went. If it went well, celebrate it specifically. If it was awkward or didn't go great, reframe it — they still did the thing, and that's what matters. Sound like a friend, not a greeting card. Keep it short.`,
+              }),
+            });
+            if (chatRes.ok && chatRes.body) {
+              const reader = chatRes.body.getReader();
+              const decoder = new TextDecoder();
+              let full = "";
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                full += decoder.decode(value, { stream: true });
+                setCoachResponse(full);
+              }
+            } else {
+              setCoachResponse("You did the thing. That's what matters.");
+            }
+          } catch {
+            setCoachResponse("You did the thing. That's what matters.");
+          }
+        } else {
+          // Skipped reflection — go straight to reset
+          setState("none");
+          onComplete(pts);
+        }
+      }
+    } catch {
+      // ignore
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function dismissCoachResponse() {
+    setState("none");
+    onComplete(celebrationPoints);
+  }
+
+  // No active mission
+  if (state === "none" && !mission) {
+    return (
+      <button
+        onClick={onPickMission}
+        className="w-full bg-white border border-navy/8 rounded-2xl p-4 flex items-center gap-4 hover:border-coral/30 transition-colors mb-4 shadow-sm"
+      >
+        <div className="w-11 h-11 rounded-xl bg-coral/10 flex items-center justify-center shrink-0">
+          <Target className="w-5 h-5 text-coral" />
+        </div>
+        <div className="flex-1 text-left">
+          <p className="text-sm font-semibold text-navy">Pick a mission</p>
+          <p className="text-xs text-navy/40 mt-0.5">
+            Small real-world challenge — takes 5 min
+          </p>
+        </div>
+        <ChevronRight className="w-4 h-4 text-navy/25" />
+      </button>
+    );
+  }
+
+  // Coach response after reflection
+  if (state === "coaching") {
+    return (
+      <div className="w-full bg-white border border-navy/8 rounded-2xl p-4 mb-4 shadow-sm animate-[fade-in_0.3s_ease-out]">
+        <div className="flex items-start gap-3">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-coral to-coral-hover flex items-center justify-center shrink-0 mt-0.5">
+            <span className="text-white text-sm">⚡</span>
+          </div>
+          <div className="flex-1 min-w-0">
+            {coachResponse ? (
+              <p className="text-sm text-navy leading-relaxed">{coachResponse}</p>
+            ) : (
+              <div className="flex gap-1.5 py-2">
+                <div className="w-2 h-2 bg-navy/30 rounded-full typing-dot" />
+                <div className="w-2 h-2 bg-navy/30 rounded-full typing-dot" />
+                <div className="w-2 h-2 bg-navy/30 rounded-full typing-dot" />
+              </div>
+            )}
+          </div>
+        </div>
+        {coachResponse && (
+          <div className="mt-3 flex items-center justify-between">
+            <p className="text-xs font-semibold text-success">
+              +{celebrationPoints} points
+            </p>
+            <button
+              onClick={dismissCoachResponse}
+              className="text-sm font-semibold text-coral hover:text-coral-hover transition-colors px-4 py-1.5 bg-coral/10 rounded-xl"
+            >
+              Nice
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Reflecting state
+  if (state === "reflecting") {
+    return (
+      <div className="w-full bg-white border border-navy/8 rounded-2xl p-4 mb-4 shadow-sm animate-[fade-in_0.2s_ease-out]">
+        <p className="text-xs font-semibold text-navy/40 uppercase tracking-wide mb-2">
+          How&apos;d it go?
+        </p>
+        <textarea
+          value={reflection}
+          onChange={(e) => setReflection(e.target.value)}
+          placeholder="Quick — how'd it go?"
+          maxLength={300}
+          rows={2}
+          className="w-full bg-cream border border-navy/8 rounded-xl px-3 py-2 text-sm text-navy placeholder:text-navy/30 resize-none focus:outline-none focus:border-coral/40 mb-3"
+        />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => submitReflection(false)}
+            disabled={submitting || !reflection.trim()}
+            className="flex-1 py-2.5 bg-coral text-white text-sm font-semibold rounded-xl disabled:opacity-40 transition-opacity"
+          >
+            Submit (+5 pts)
+          </button>
+          <button
+            onClick={() => submitReflection(true)}
+            disabled={submitting}
+            className="py-2.5 px-3 text-xs font-medium text-navy/40 hover:text-navy/60 transition-colors"
+          >
+            Skip reflection (+3 pts)
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Active mission
+  return (
+    <div className="w-full bg-white border border-navy/8 rounded-2xl p-4 mb-4 shadow-sm">
+      <div className="flex items-center gap-2 mb-2">
+        <Target className="w-4 h-4 text-coral" />
+        <p className="text-xs font-semibold text-navy/40 uppercase tracking-wide">
+          Today&apos;s Mission
+        </p>
+      </div>
+      <p className="text-sm font-semibold text-navy leading-snug mb-3">
+        {mission?.title}
+      </p>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={handleDone}
+          disabled={submitting}
+          className="flex items-center gap-1.5 py-2 px-4 bg-coral text-white text-sm font-semibold rounded-xl hover:bg-coral-hover transition-colors"
+        >
+          <Check className="w-4 h-4" />
+          Done
+        </button>
+        <button
+          onClick={handleSkip}
+          disabled={submitting}
+          className="py-2 px-3 text-xs font-medium text-navy/35 hover:text-navy/55 transition-colors"
+        >
+          Skip
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export default function HomePage() {
@@ -88,6 +331,8 @@ export default function HomePage() {
           weeklyProgress: [],
           recentReflection: null,
           hasCheckin: true,
+          activeMission: null,
+          missionsCompleted: 0,
         });
       } finally {
         setLoading(false);
@@ -139,6 +384,24 @@ export default function HomePage() {
           </div>
           <ChevronRight className="w-4 h-4 text-navy/25" />
         </button>
+
+        {/* Today's Mission */}
+        <MissionCard
+          mission={data.activeMission}
+          onComplete={(pts) => {
+            setData((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    totalPoints: prev.totalPoints + pts,
+                    activeMission: null,
+                    missionsCompleted: prev.missionsCompleted + (pts > 0 ? 1 : 0),
+                  }
+                : prev
+            );
+          }}
+          onPickMission={() => router.push("/missions")}
+        />
 
         {/* Upcoming event */}
         {nextEvent && (
