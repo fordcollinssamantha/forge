@@ -21,8 +21,8 @@ export function BottomNav() {
   if (HIDDEN_ON.some((p) => pathname.startsWith(p))) return null;
 
   return (
-    <nav className="shrink-0 border-t border-navy/8 bg-white">
-      <div className="flex items-center">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-navy/8 bg-white">
+      <div className="mx-auto max-w-md flex items-center">
         {TABS.map(({ href, label, icon: Icon, activeColor }) => {
           const active =
             href === "/skills"

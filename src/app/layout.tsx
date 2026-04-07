@@ -34,7 +34,7 @@ export default function RootLayout({
       <html lang="en">
         <body className={`${inter.variable} font-sans antialiased bg-cream`}>
           <div className="mx-auto max-w-md min-h-dvh flex flex-col">
-            <main className="flex-1 flex flex-col min-h-0">
+            <main className="flex-1 flex flex-col min-h-0 pb-[60px]">
               {children}
             </main>
             <BottomNav />

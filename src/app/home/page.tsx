@@ -315,10 +315,8 @@ export default function HomePage() {
         }
         if (res.ok) {
           const dashboard = await res.json();
-          if (!dashboard.hasCheckin) {
-            router.replace("/checkin");
-            return;
-          }
+          // Always show the dashboard — the check-in prompt card
+          // is already on the page for users who haven't checked in yet
           setData(dashboard);
         }
       } catch {

@@ -1,5 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getScenario } from "@/lib/practice-data";
+import { getCharacter, buildCharacterContext } from "@/lib/voice-config";
+import { getVoiceCoachingTip } from "@/lib/voice-coaching-tips";
 
 const anthropic = new Anthropic();
 
@@ -36,14 +38,46 @@ function buildSystemPrompt(
   characterPrompt: string,
   setting: string,
   temperature: string,
-  isSurprise: boolean
+  isSurprise: boolean,
+  characterContext: string | null,
+  mode: "text" | "voice" = "text"
 ): string {
   const tempPrompt =
     TEMPERATURE_PROMPTS[temperature] || TEMPERATURE_PROMPTS.medium;
 
-  return `You are a person existing in this social setting. You are NOT waiting to meet someone. You are doing your own thing. Never initiate conversation — the user must speak first.
+  const voiceBlock =
+    mode === "voice"
+      ? `
+VOICE MODE ACTIVE — adjust for spoken conversation:
+- Keep responses to 1-2 sentences max. Real people don't monologue.
+- Use natural speech: "yeah," "I mean," sentence fragments. Not complete grammatical sentences.
+- Include filler naturally: "Hmm..." or "I dunno..." — real people think out loud.
+- React to WHAT they said, not how well they said it. Users will stumble, restart, say "um." That's normal speech — don't coach on it mid-conversation.
+- Shorter turns, more back-and-forth.
+- When giving feedback, acknowledge voice is harder than text: "Talking out loud is a different game than typing — the fact that you did this is the win."
 
-${tempPrompt}
+RESPONSE FORMAT — separate actions from speech:
+- Put physical actions and scene description in [brackets]: [leans against the wall] [laughs] [looks up from phone]
+- Put spoken words as plain text with NO brackets.
+- Example: [glances up from phone] Yeah, I've seen you around. You're usually here in the mornings right?
+- Example: [shrugs] I dunno... maybe? [checks phone]
+- NEVER put spoken dialogue inside brackets. Brackets are ONLY for non-verbal actions.
+`
+      : "";
+
+  const voiceFeedbackBlock =
+    mode === "voice"
+      ? `
+VOICE FEEDBACK RULES:
+- Quote specific things the user SAID — use their actual words from the conversation in your feedback.
+- End with this coaching tip (include it verbatim as the last paragraph of your feedback):
+"${getVoiceCoachingTip()}"
+`
+      : "";
+
+  return `You are a person existing in this social setting. You are NOT waiting to meet someone. You are doing your own thing. Never initiate conversation — the user must speak first.
+${characterContext ? `\n${characterContext}\n` : ""}
+${voiceBlock}${tempPrompt}
 
 For all temperatures, react naturally to what the user actually says, not to what a perfect response would be. If they say something genuinely funny or interesting, it's okay to warm up slightly even at Cold Read/Tough Crowd — people are human. But don't abandon your temperature.
 
@@ -54,14 +88,14 @@ Your feedback MUST include:
 2. One thing to try differently next time
 3. How well the user read your energy level and adjusted — did they pick up on your social cues? Did they push when you were pulling away, or did they match your energy? For Tough Crowd specifically: if the user recognized the signals and exited gracefully, that IS the success — call it out explicitly. But if the user kept pushing past obvious disinterest signals (e.g. you gave two or more one-word answers and they kept trying), call that out directly — something like "You kept going after I gave you two one-word answers. In real life, that's the signal to say 'nice talking to you' and move on. Reading the exit is the skill here." Vary the wording but be specific about what signals they missed and how many you gave before they should have backed off.${isSurprise ? `\n4. Reveal: "I was set to ${temperature === "warm" ? "Friendly" : temperature === "medium" ? "Cold Read" : "Tough Crowd"} for this one." — tell them what difficulty was assigned so they can calibrate.` : ""}
 ${temperature === "cold" || isSurprise ? `\nIMPORTANT — Tough Crowd feedback closer: If the temperature was cold (including surprise-assigned cold), ALWAYS end your feedback with a version of this (vary the wording each time): "One more thing — sometimes people are just cold. Not about you. Bad day, not in the mood, whatever. The skill isn't winning every conversation. It's reading the room, exiting clean, and not sweating it after. That's what confidence actually looks like."` : ""}
-
+${voiceFeedbackBlock}
 Keep feedback to ${temperature === "cold" ? "5-7" : "4-5"} sentences max. Be encouraging but honest.
 
 SCENARIO: ${setting}
 
 YOUR CHARACTER: ${characterPrompt}
 
-Keep responses short — 1-3 sentences max while in character. Real people don't give speeches.`;
+Keep responses short — ${mode === "voice" ? "1-2" : "1-3"} sentences max while in character. Real people don't give speeches.`;
 }
 
 export async function POST(req: Request) {
@@ -72,11 +106,15 @@ export async function POST(req: Request) {
       scenarioId,
       temperature,
       isSurprise,
+      characterId,
+      mode,
     }: {
       messages: { role: "user" | "character"; content: string }[];
       scenarioId: string;
       temperature: string;
       isSurprise?: boolean;
+      characterId?: string | null;
+      mode?: "text" | "voice";
     } = body;
 
     if (!messages || !Array.isArray(messages)) {
@@ -94,11 +132,17 @@ export async function POST(req: Request) {
       );
     }
 
+    // Build character context if a voice character is selected
+    const voiceChar = characterId ? getCharacter(characterId) : null;
+    const charContext = voiceChar ? buildCharacterContext(voiceChar) : null;
+
     const systemPrompt = buildSystemPrompt(
       scenario.characterPrompt,
       scenario.setting,
       temperature || "medium",
-      !!isSurprise
+      !!isSurprise,
+      charContext,
+      mode || (characterId ? "voice" : "text")
     );
 
     // Convert message format to Anthropic format

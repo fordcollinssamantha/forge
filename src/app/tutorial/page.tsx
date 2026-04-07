@@ -70,7 +70,7 @@ export default function TutorialPage() {
       // Don't block navigation on failure
     }
     setExiting(true);
-    setTimeout(() => router.push("/companion"), 300);
+    setTimeout(() => router.replace("/companion"), 300);
   }
 
   function skip() {

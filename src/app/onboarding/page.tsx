@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, ArrowLeft } from "lucide-react";
 import CityAutocomplete from "@/components/CityAutocomplete";
 
 type Screen = 0 | 1 | 2 | 3;
@@ -37,12 +37,23 @@ function ProgressDots({ current, total = 4 }: { current: number; total?: number 
   );
 }
 
+function BackButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center gap-1 text-navy/40 text-sm font-medium -ml-1 hover:text-navy/60 transition-colors"
+    >
+      <ArrowLeft className="w-4 h-4" />
+      Back
+    </button>
+  );
+}
+
 function WelcomeScreen({ onNext }: { onNext: () => void }) {
   return (
     <div className="flex flex-col min-h-screen px-6 bg-cream">
       <ProgressDots current={0} />
       <div className="flex-1 flex flex-col justify-center -mt-8">
-        {/* Logo */}
         <div className="w-14 h-14 rounded-2xl bg-navy flex items-center justify-center mb-8">
           <span className="text-2xl font-extrabold text-cream">F</span>
         </div>
@@ -80,13 +91,17 @@ function WelcomeScreen({ onNext }: { onNext: () => void }) {
 
 function ProfileScreen({
   onNext,
+  onBack,
+  initialData,
 }: {
   onNext: (data: { name: string; age: number; city: string; isCustomCity: boolean }) => void;
+  onBack: () => void;
+  initialData: { name: string; age: string; city: string; isCustomCity: boolean };
 }) {
-  const [name, setName] = useState("");
-  const [age, setAge] = useState("");
-  const [city, setCity] = useState("");
-  const [isCustomCity, setIsCustomCity] = useState(false);
+  const [name, setName] = useState(initialData.name);
+  const [age, setAge] = useState(initialData.age);
+  const [city, setCity] = useState(initialData.city);
+  const [isCustomCity, setIsCustomCity] = useState(initialData.isCustomCity);
 
   const isValid = name.trim() && age && parseInt(age) >= 18 && city.trim();
 
@@ -94,7 +109,8 @@ function ProfileScreen({
     <div className="flex flex-col min-h-screen px-6 bg-cream">
       <ProgressDots current={1} />
       <div className="flex-1 flex flex-col pt-8">
-        <h2 className="text-2xl font-bold text-navy leading-snug">
+        <BackButton onClick={onBack} />
+        <h2 className="text-2xl font-bold text-navy leading-snug mt-4">
           Tell me a little about yourself
         </h2>
         <p className="text-navy/50 mt-2 text-sm">
@@ -163,11 +179,17 @@ function ProfileScreen({
 
 function MotivationScreen({
   onNext,
+  onBack,
+  initialSelected,
+  initialCustomText,
 }: {
-  onNext: (motivation: string) => void;
+  onNext: (motivation: string, selectedId: MotivationId, customText: string) => void;
+  onBack: () => void;
+  initialSelected: MotivationId | null;
+  initialCustomText: string;
 }) {
-  const [selected, setSelected] = useState<MotivationId | null>(null);
-  const [customText, setCustomText] = useState("");
+  const [selected, setSelected] = useState<MotivationId | null>(initialSelected);
+  const [customText, setCustomText] = useState(initialCustomText);
 
   const isValid = selected && (selected !== "other" || customText.trim().length > 0);
   const motivationValue = selected === "other"
@@ -178,7 +200,8 @@ function MotivationScreen({
     <div className="flex flex-col min-h-screen px-6 bg-cream">
       <ProgressDots current={2} />
       <div className="flex-1 flex flex-col pt-6">
-        <h2 className="text-2xl font-bold text-navy leading-snug">
+        <BackButton onClick={onBack} />
+        <h2 className="text-2xl font-bold text-navy leading-snug mt-4">
           What brought you to Forge?
         </h2>
         <p className="text-navy/50 mt-2 text-sm">
@@ -224,7 +247,7 @@ function MotivationScreen({
       <div className="w-full pb-10 pt-6">
         <button
           disabled={!isValid}
-          onClick={() => isValid && onNext(motivationValue)}
+          onClick={() => isValid && selected && onNext(motivationValue, selected, customText)}
           className="w-full bg-coral text-white font-semibold py-4 rounded-2xl text-lg transition-all flex items-center justify-center gap-2 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-coral-hover active:scale-[0.98]"
         >
           Continue
@@ -235,12 +258,13 @@ function MotivationScreen({
   );
 }
 
-function ToneScreen({ onFinish }: { onFinish: () => void }) {
+function ToneScreen({ onFinish, onBack }: { onFinish: () => void; onBack: () => void }) {
   return (
     <div className="flex flex-col min-h-screen px-6 bg-cream">
       <ProgressDots current={3} />
       <div className="flex-1 flex flex-col justify-center -mt-12">
-        <p className="text-coral font-semibold text-lg">One more thing...</p>
+        <BackButton onClick={onBack} />
+        <p className="text-coral font-semibold text-lg mt-4">One more thing...</p>
         <div className="mt-6 space-y-5">
           <p className="text-navy text-xl leading-relaxed font-medium">
             This isn&apos;t therapy. It&apos;s not a dating app. It&apos;s a
@@ -272,12 +296,18 @@ export default function OnboardingPage() {
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [saving, setSaving] = useState(false);
   const [exiting, setExiting] = useState(false);
+
+  // Lifted state so it persists across back/forward navigation
+  const [profileForm, setProfileForm] = useState({ name: "", age: "", city: "", isCustomCity: false });
   const [profileData, setProfileData] = useState<{
     name: string;
     age: number;
     city: string;
     isCustomCity: boolean;
   } | null>(null);
+  const [motivationSelected, setMotivationSelected] = useState<MotivationId | null>(null);
+  const [motivationCustomText, setMotivationCustomText] = useState("");
+
   const router = useRouter();
 
   function goToScreen(next: Screen) {
@@ -296,11 +326,14 @@ export default function OnboardingPage() {
     isCustomCity: boolean;
   }) {
     setProfileData(data);
+    setProfileForm({ name: data.name, age: String(data.age), city: data.city, isCustomCity: data.isCustomCity });
     goToScreen(2);
   }
 
-  async function handleMotivationSubmit(motivation: string) {
+  async function handleMotivationSubmit(motivation: string, selectedId: MotivationId, customText: string) {
     if (!profileData) return;
+    setMotivationSelected(selectedId);
+    setMotivationCustomText(customText);
     setSaving(true);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
@@ -327,7 +360,6 @@ export default function OnboardingPage() {
     } catch (err) {
       clearTimeout(timeout);
       console.error("Failed to save profile:", err);
-      // Don't block onboarding if save fails or times out — still advance
       goToScreen(3);
     } finally {
       setSaving(false);
@@ -336,7 +368,7 @@ export default function OnboardingPage() {
 
   function handleFinish() {
     setExiting(true);
-    setTimeout(() => router.push("/checkin"), 300);
+    setTimeout(() => router.replace("/checkin"), 300);
   }
 
   const translateClass = isTransitioning
@@ -354,11 +386,20 @@ export default function OnboardingPage() {
       >
         {screen === 0 && <WelcomeScreen onNext={() => goToScreen(1)} />}
         {screen === 1 && (
-          <ProfileScreen onNext={handleProfileNext} />
+          <ProfileScreen
+            onNext={handleProfileNext}
+            onBack={() => goToScreen(0)}
+            initialData={profileForm}
+          />
         )}
         {screen === 2 && (
           <div className="relative">
-            <MotivationScreen onNext={handleMotivationSubmit} />
+            <MotivationScreen
+              onNext={handleMotivationSubmit}
+              onBack={() => goToScreen(1)}
+              initialSelected={motivationSelected}
+              initialCustomText={motivationCustomText}
+            />
             {saving && (
               <div className="absolute inset-0 bg-cream/60 flex items-center justify-center">
                 <div className="w-8 h-8 border-3 border-coral border-t-transparent rounded-full animate-spin" />
@@ -366,7 +407,7 @@ export default function OnboardingPage() {
             )}
           </div>
         )}
-        {screen === 3 && <ToneScreen onFinish={handleFinish} />}
+        {screen === 3 && <ToneScreen onFinish={handleFinish} onBack={() => goToScreen(2)} />}
       </div>
     </div>
   );
