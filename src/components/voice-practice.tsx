@@ -217,8 +217,14 @@ export default function VoicePractice({
         const fallbackTimer = setTimeout(settle, estimatedMs);
 
         utterance.onend = settle;
-        utterance.onerror = () => {
-          setTtsUnavailable(true);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        utterance.onerror = (e: any) => {
+          // Only permanently disable TTS for truly fatal errors.
+          // "interrupted" fires constantly on iOS when cancel() is called before
+          // the next utterance — treating it as fatal silently kills all future TTS.
+          if (e?.error === "synthesis-unavailable") {
+            setTtsUnavailable(true);
+          }
           settle();
         };
 
@@ -366,6 +372,15 @@ export default function VoicePractice({
 
     setError(null);
     window.speechSynthesis?.cancel();
+
+    // iOS Safari: unlock the audio session for later async TTS calls by speaking
+    // a silent utterance now, while we're still inside a user gesture.
+    if (hasSpeechSynthesis()) {
+      const unlock = new SpeechSynthesisUtterance(" ");
+      unlock.volume = 0;
+      unlock.rate = 10;
+      window.speechSynthesis.speak(unlock);
+    }
 
     const recognition = new SRClass();
     recognition.lang = "en-US";
@@ -540,13 +555,6 @@ export default function VoicePractice({
     if (orbState === "listening") {
       stopListening();
     } else if (orbState === "idle") {
-      // iOS Safari requires speechSynthesis.speak() to be called from a synchronous
-      // user gesture to unlock the audio session for later async TTS calls.
-      if (hasSpeechSynthesis()) {
-        const unlock = new SpeechSynthesisUtterance("");
-        unlock.volume = 0;
-        window.speechSynthesis.speak(unlock);
-      }
       startListening();
     }
   }
