@@ -540,6 +540,13 @@ export default function VoicePractice({
     if (orbState === "listening") {
       stopListening();
     } else if (orbState === "idle") {
+      // iOS Safari requires speechSynthesis.speak() to be called from a synchronous
+      // user gesture to unlock the audio session for later async TTS calls.
+      if (hasSpeechSynthesis()) {
+        const unlock = new SpeechSynthesisUtterance("");
+        unlock.volume = 0;
+        window.speechSynthesis.speak(unlock);
+      }
       startListening();
     }
   }
