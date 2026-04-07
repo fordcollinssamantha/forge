@@ -202,10 +202,24 @@ export default function VoicePractice({
         const voice = pickVoice(resolvedGenderRef.current);
         if (voice) utterance.voice = voice;
 
-        utterance.onend = () => resolve();
+        let settled = false;
+        const settle = () => {
+          if (!settled) {
+            settled = true;
+            clearTimeout(fallbackTimer);
+            resolve();
+          }
+        };
+
+        // iOS Safari often doesn't fire onend — fall back to a duration estimate
+        // ~12 chars/sec at rate=1, plus 1.5s buffer
+        const estimatedMs = (text.length / (12 * character.rate)) * 1000 + 1500;
+        const fallbackTimer = setTimeout(settle, estimatedMs);
+
+        utterance.onend = settle;
         utterance.onerror = () => {
           setTtsUnavailable(true);
-          resolve();
+          settle();
         };
 
         window.speechSynthesis.speak(utterance);
